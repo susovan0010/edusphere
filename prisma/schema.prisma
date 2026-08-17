@@ -1,0 +1,315 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                 String           @id @default(cuid())
+  name               String
+  email              String           @unique
+  passwordHash       String
+  role               String           // "ADMIN", "TEACHER", "STUDENT"
+  mustChangePassword Boolean          @default(false)
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  studentProfile     Student?
+  teacherProfile     Teacher?
+  googleDriveAuth    GoogleDriveAuth?
+  notifications      Notification[]
+  auditLogs          AuditLog[]
+}
+
+model Student {
+  id             String    @id @default(cuid())
+  userId         String    @unique
+  rollNo         String    @unique
+  classId        String
+  sectionId      String
+  admissionYear  Int
+
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  class          Class     @relation(fields: [classId], references: [id])
+  section        Section   @relation(fields: [sectionId], references: [id])
+
+  attendances    Attendance[]
+  assignmentSets StudentAssignmentSet[]
+  objectiveResponses ObjectiveResponse[]
+  assignmentResults  AssignmentResult[]
+  submissions    Submission[]
+  marks          Mark[]
+}
+
+model Teacher {
+  id             String    @id @default(cuid())
+  userId         String    @unique
+  department     String
+  designation    String
+
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subjectsTaught TeacherSubject[]
+  assignments    Assignment[]
+  questionBank   QuestionBank[]
+}
+
+model Semester {
+  id           String    @id @default(cuid())
+  label        String    // e.g., "Semester 5"
+  academicYear Int       // e.g., 2026
+  isCurrent    Boolean   @default(false)
+
+  sections     Section[]
+  subjects     Subject[]
+}
+
+model Class {
+  id           String    @id @default(cuid())
+  name         String    // e.g., "3rd Year ECE"
+
+  sections     Section[]
+  subjects     Subject[]
+  students     Student[]
+}
+
+model Section {
+  id           String    @id @default(cuid())
+  name         String    // e.g., "Section A"
+  classId      String
+  semesterId   String
+
+  class        Class     @relation(fields: [classId], references: [id], onDelete: Cascade)
+  semester     Semester  @relation(fields: [semesterId], references: [id], onDelete: Cascade)
+  students     Student[]
+  teacherSubjects TeacherSubject[]
+  assignments  Assignment[]
+}
+
+model Subject {
+  id           String    @id @default(cuid())
+  name         String    // e.g., "Digital Signal Processing"
+  code         String    // e.g., "ECE301"
+  credits      Int       @default(4)
+  classId      String
+  semesterId   String
+
+  class        Class     @relation(fields: [classId], references: [id], onDelete: Cascade)
+  semester     Semester  @relation(fields: [semesterId], references: [id], onDelete: Cascade)
+  teacherSubjects TeacherSubject[]
+  attendances  Attendance[]
+  assignments  Assignment[]
+  questionBank QuestionBank[]
+  marks        Mark[]
+}
+
+model TeacherSubject {
+  id               String    @id @default(cuid())
+  teacherId        String
+  subjectId        String
+  sectionId        String
+  status           String    @default("APPROVED") // "APPROVED", "PENDING", "REJECTED"
+  requestedBy      String    @default("ADMIN")    // "ADMIN", "TEACHER"
+  approvedByAdminId String?
+  approvedAt       DateTime?
+  notes            String?
+  createdAt        DateTime  @default(now())
+
+  teacher          Teacher   @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  subject          Subject   @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  section          Section   @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+}
+
+model Attendance {
+  id           String    @id @default(cuid())
+  studentId    String
+  subjectId    String
+  date         DateTime
+  status       String    // "PRESENT", "ABSENT"
+  markedBy     String
+  createdAt    DateTime  @default(now())
+
+  student      Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  subject      Subject   @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+}
+
+model QuestionBank {
+  id            String    @id @default(cuid())
+  subjectId     String
+  teacherId     String
+  questionText  String
+  type          String    // "MCQ", "DESCRIPTIVE"
+  options       String?   // JSON array of strings for MCQ
+  correctAnswer String?   // Correct option key or text for MCQ
+  defaultMarks  Int       @default(5)
+  createdAt     DateTime  @default(now())
+
+  subject       Subject   @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  teacher       Teacher   @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  assignmentQuestions AssignmentQuestion[]
+}
+
+model Assignment {
+  id             String    @id @default(cuid())
+  subjectId      String
+  teacherId      String
+  sectionId      String
+  title          String
+  description    String
+  type           String    // "DESCRIPTIVE", "OBJECTIVE"
+  dueDate        DateTime
+  maxMarks       Int       @default(100)
+  driveFileId    String?
+  driveFileLink  String?
+  createdAt      DateTime  @default(now())
+
+  subject        Subject   @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  teacher        Teacher   @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  section        Section   @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  questions      AssignmentQuestion[]
+  studentSets    StudentAssignmentSet[]
+  objectiveResponses ObjectiveResponse[]
+  assignmentResults  AssignmentResult[]
+  submissions    Submission[]
+}
+
+model AssignmentQuestion {
+  id                 String        @id @default(cuid())
+  assignmentId       String
+  questionBankId     String?
+  customQuestionText String?
+  order              Int           @default(1)
+  marks              Int           @default(5)
+  options            String?       // JSON string of options for MCQ
+  correctAnswer      String?
+
+  assignment         Assignment    @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  questionBank       QuestionBank? @relation(fields: [questionBankId], references: [id], onDelete: SetNull)
+}
+
+model StudentAssignmentSet {
+  id                   String     @id @default(cuid())
+  assignmentId         String
+  studentId            String
+  shuffledQuestionOrder String    // JSON string of question IDs in shuffled order
+  shuffledOptionOrder   String?   // JSON string of questionId -> shuffled options mapping
+  createdAt            DateTime   @default(now())
+
+  assignment           Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  student              Student    @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([assignmentId, studentId])
+}
+
+model ObjectiveResponse {
+  id             String     @id @default(cuid())
+  assignmentId   String
+  studentId      String
+  questionId     String
+  selectedAnswer String
+  isCorrect      Boolean
+  marksAwarded   Int
+  locked         Boolean    @default(true)
+  submittedAt    DateTime   @default(now())
+
+  assignment     Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  student        Student    @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([assignmentId, studentId, questionId])
+}
+
+model AssignmentResult {
+  id             String     @id @default(cuid())
+  assignmentId   String
+  studentId      String
+  totalMarks     Int
+  obtainedMarks  Int
+  percentage     Float
+  autoCalculated Boolean    @default(true)
+  calculatedAt   DateTime   @default(now())
+
+  assignment     Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  student        Student    @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([assignmentId, studentId])
+}
+
+model Submission {
+  id             String     @id @default(cuid())
+  assignmentId   String
+  studentId      String
+  textContent    String?
+  driveFileId    String?
+  driveFileLink  String?
+  editCount      Int        @default(0) // 0, 1, 2 (locked once >= 2)
+  status         String     @default("SUBMITTED") // "SUBMITTED", "LOCKED"
+  submittedAt    DateTime   @default(now())
+  lastEditedAt   DateTime   @default(now())
+
+  assignment     Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  student        Student    @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([assignmentId, studentId])
+}
+
+model Mark {
+  id            String    @id @default(cuid())
+  studentId     String
+  subjectId     String
+  examType      String    // "CT", "ASSIGNMENT", "MIDSEM", "ENDSEM"
+  marksObtained Float
+  maxMarks      Float
+  date          DateTime  @default(now())
+  enteredBy     String
+
+  student       Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  subject       Subject   @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+}
+
+model GoogleDriveAuth {
+  id                    String    @id @default(cuid())
+  userId                String    @unique
+  encryptedRefreshToken String
+  driveFolderId         String?
+  connectedAt           DateTime  @default(now())
+
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  message   String
+  type      String   // "ASSIGNMENT", "GENERAL", "RESULT", "APPROVAL"
+  relatedId String?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Notice {
+  id        String   @id @default(cuid())
+  title     String
+  body      String
+  postedBy  String
+  audience  String   // "ALL", "STUDENTS", "TEACHERS"
+  createdAt DateTime @default(now())
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  userId      String
+  action      String   // "CREATE", "UPDATE", "DELETE", "GRADE", "ATTENDANCE_MARK", "APPROVAL", "PASSWORD_CHANGE"
+  targetTable String
+  targetId    String
+  oldValue    String?
+  newValue    String?
+  timestamp   DateTime @default(now())
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
